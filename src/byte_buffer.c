@@ -7,13 +7,13 @@ struct byte_buffer * alloc_byte_buffer(size_t size)
 {
     struct byte_buffer *bb = malloc(sizeof(struct byte_buffer));
     if (!bb) {
-        LOG_CRIT("malloc(%zu) failed", sizeof(struct byte_buffer));
+        PANIC("malloc(%zu) failed", sizeof(struct byte_buffer));
         abort();
     }
 
     bb->buf = malloc(size);
     if (!bb->buf) {
-        LOG_CRIT("malloc(%zu) failed", size);
+        PANIC("malloc(%zu) failed", size);
         abort();
     }
     bb->cap = size;
@@ -33,7 +33,7 @@ int realloc_byte_buffer(struct byte_buffer *bb, size_t size)
 
     void *p = realloc(bb->buf, size);
     if (!p) {
-        LOG_CRIT("realloc(%zu) failed. Original ptr: %p", size, bb->buf);
+        PANIC("realloc(%zu) failed. Original ptr: %p", size, bb->buf);
         abort(); 
     }
 

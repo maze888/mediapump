@@ -1,18 +1,22 @@
-#include "logging.h"
-#include "byte_buffer.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+
+#include "test_servers.h"
 
 int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IOLBF, 0);
+    signal(SIGPIPE, SIG_IGN);
 
-    LOG_CRIT("good....");
-    LOG_CRIT("hi there %d", 13);
-    
-    LOG_ERROR("hi there %s", "good man");
-    LOG_INFO("hi there %s %d", "good man", 256);
-    LOG_DEBUG("hi there %s %d %d %s", "good man", 256, 512, "world");
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s (port)\n", argv[0]);
+        return 1;
+    }
 
-    struct byte_buffer *bb = alloc_byte_buffer(1024);
-
+    if (test_echo_server(atoi(argv[1])) < 0) {
+        fprintf(stderr, "test_echo_server() failed");
+        return 1;
+    }
 
     return 0;
 }

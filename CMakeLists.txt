@@ -6,28 +6,36 @@ set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-# set(CMAKE_BUILD_TYPE Release)
-set(CMAKE_BUILD_TYPE Debug)
-
-# 메모리 오류 탐지
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_options(-fsanitize=address -g)
-    add_link_options(-fsanitize=address)
-endif()
-
-# 컴파일 명령 DB 생성 활성화
+# tags 생성 활성화(e.g. ctags)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/bin/Debug)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin/Release)
 
 file(GLOB SRC_FILES ${PROJECT_SOURCE_DIR}/src/*.c)
 add_executable(${PROJECT_NAME} ${SRC_FILES})
 
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Choose the type of build" FORCE)
+endif()
+
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}"
+)
+
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    # -flto (Link Time Optimization)
+    set_target_properties(mediapumpd PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
+elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    # 메모리 오류 탐지 설정
+    target_compile_options(mediapumpd PRIVATE -fsanitize=address -g)
+    target_link_options(mediapumpd PRIVATE -fsanitize=address)
+endif()
+
+target_compile_definitions(${PROJECT_NAME} PRIVATE _GNU_SOURCE)
+
 target_include_directories(${PROJECT_NAME}
     PRIVATE ${PROJECT_SOURCE_DIR}/include
 )
+
+target_link_libraries(${PROJECT_NAME} PRIVATE uring)
 
 # not yet
 # link_directories(${PROJECT_SOURCE_DIR}/libs)
@@ -43,4 +51,5 @@ target_include_directories(${PROJECT_NAME}
 #        yyjson
 #        curl
 #        uuid
+#        liburing-dev
 # )

@@ -59,5 +59,6 @@ CMakeCache.txt
 CMakeFiles/
 Makefile
 bin/
+build/
 cmake_install.cmake
-
+.cache

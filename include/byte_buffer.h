@@ -16,4 +16,3 @@ void free_byte_buffer(struct byte_buffer **bb);
 
 size_t write_byte_buffer(struct byte_buffer *bb, void *buf, size_t len);
 
-
