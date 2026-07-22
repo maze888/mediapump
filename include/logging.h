@@ -13,8 +13,8 @@
     int _err = errno; \
     char _err_buf[256] = {0}; \
     strerror_r(_err, _err_buf, sizeof(_err_buf)); \
-    fprintf(stderr, "[CRIT] (%s:%d) " fmt " | Error: %d (%s)\n", \
-            __FILENAME__, __LINE__, ##__VA_ARGS__, _err, _err_buf); \
+    fprintf(stderr, "[CRIT] (%s:%d) " fmt " | Error: %s (errno: %d)\n", \
+            __FILENAME__, __LINE__, ##__VA_ARGS__, _err_buf, _err); \
     abort(); \
 } while (0)
 
@@ -22,8 +22,8 @@
     int _err = errno; \
     char _err_buf[256] = {0}; \
     strerror_r(_err, _err_buf, sizeof(_err_buf)); \
-    fprintf(stderr, "[ERROR] (%s:%d) " fmt " | Error: %d (%s)\n", \
-            __FILENAME__, __LINE__, ##__VA_ARGS__, _err, _err_buf); \
+    fprintf(stderr, "[ERROR] (%s:%d) " fmt " | Error: %s (errno: %d)\n", \
+            __FILENAME__, __LINE__, ##__VA_ARGS__, _err_buf, _err); \
 } while (0)
 
 #define LOG_ERROR_CODE(err_code, fmt, ...) do { \
@@ -32,8 +32,8 @@
     int _abs_err = (_err < 0) ? -_err : _err; \
     char _err_buf[256] = {0}; \
     char *_err_msg = strerror_r(_abs_err, _err_buf, sizeof(_err_buf)); \
-    fprintf(stderr, "[ERROR] (%s:%d) " fmt " | Error: %d (%s)\n", \
-            __FILENAME__, __LINE__, ##__VA_ARGS__, _abs_err, _err_msg); \
+    fprintf(stderr, "[ERROR] (%s:%d) " fmt " | Error: %s (errno: %d)\n", \
+            __FILENAME__, __LINE__, ##__VA_ARGS__, _err_msg, _abs_err); \
 } while (0)
 
 #define LOG_ERROR_NO_STRERROR(fmt, ...) \

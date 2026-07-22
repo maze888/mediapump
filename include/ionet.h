@@ -5,11 +5,15 @@
 #include <liburing.h>
 
 typedef enum {
-    IO_TYPE_ACCEPT = 1,
-    IO_TYPE_MULTISHOT_ACCEPT = 2,
-    IO_TYPE_READ = 4,
-    IO_TYPE_WRITE = 8,
-    IO_TYPE_SENDFILE = 16,
+    IO_TYPE_ACCEPT,
+    IO_TYPE_MULTISHOT_ACCEPT,
+    IO_TYPE_CLOSE,
+    IO_TYPE_FILE_CLOSE,
+    IO_TYPE_CANCEL,
+    IO_TYPE_SHUTDOWN,
+    IO_TYPE_READ,
+    IO_TYPE_WRITE,
+    IO_TYPE_SENDFILE
 } io_type_t;
 
 typedef struct ionet_context {
@@ -41,6 +45,7 @@ struct ionet_server {
     // unsigned char *provided_buffers;
 
     size_t max_read_buf_size;
+    unsigned max_send_size; // io_uring prep_write
 
     request_completion_cb accept_cb, read_cb, write_cb;
 };
@@ -55,4 +60,4 @@ int ionet_add_listener(struct ionet_server *server, io_type_t type, request_comp
 int ionet_send_data(struct ionet_server *server, int fd, int file_fd, void *data, size_t data_len);
 
 void set_read_buf_size(struct ionet_server *server, size_t size);
-
+void set_max_send_size(struct ionet_server *server, unsigned size);

@@ -13,8 +13,18 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if (test_echo_server(atoi(argv[1])) < 0) {
-        fprintf(stderr, "test_echo_server() failed");
+    // if (test_echo_server(atoi(argv[1])) < 0) {
+    //     fprintf(stderr, "test_echo_server() failed");
+    //     return 1;
+    // }
+    
+    // if (test_file_server_1(atoi(argv[1])) < 0) {
+    //     fprintf(stderr, "test_file_server() failed");
+    //     return 1;
+    // }
+    
+    if (test_file_server_2(atoi(argv[1])) < 0) {
+        fprintf(stderr, "test_file_server() failed");
         return 1;
     }
 

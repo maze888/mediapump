@@ -9,33 +9,6 @@
 
 #define DEFAULT_QUEUE_SIZE 1024
 
-static void add_request(struct ionet_server *server, struct ionet_context *ctx) {
-    // TODO: sqe 가 null 일때 처리는 요청을 별도 큐에 넣고 특정 시점 이후에 다시 처리하는 형태로 변경
-    struct io_uring_sqe *sqe = io_uring_get_sqe(&server->ring);
-    if (!sqe) {
-        PANIC("io_uring_get_sqe() failed");
-    }
-
-    switch (ctx->io_type) {
-        case IO_TYPE_ACCEPT:
-            io_uring_prep_accept(sqe, server->accept_fd, NULL, NULL, 0);
-            break;
-        case IO_TYPE_MULTISHOT_ACCEPT:
-            io_uring_prep_multishot_accept(sqe, server->accept_fd, NULL, NULL, 0);
-            break;
-        case IO_TYPE_READ:
-            io_uring_prep_read(sqe, ctx->fd, ctx->read_buf, server->max_read_buf_size, 0);
-            break;
-        case IO_TYPE_WRITE:
-            io_uring_prep_write(sqe, ctx->fd, ctx->send_buf + ctx->send_len, ctx->send_buf_size - ctx->send_len, 0);
-            break;
-        case IO_TYPE_SENDFILE:
-            break;
-    }
-
-    io_uring_sqe_set_data(sqe, ctx);
-}
-
 struct ionet_server * create_ionet_server(const char *bind_ip, unsigned short bind_port, int queue_size)
 {
     struct ionet_server *server = malloc(sizeof(struct ionet_server));
@@ -87,6 +60,9 @@ struct ionet_server * create_ionet_server(const char *bind_ip, unsigned short bi
 
     // default read size
     server->max_read_buf_size = BUFSIZ;
+    
+    // default send size
+    server->max_send_size = 131072;
 
     return server;
 
@@ -117,13 +93,14 @@ int ionet_loop(struct ionet_server *server)
     // 대응 전략: CQE의 res 값을 확인하여 에러가 발생했는지 항상 체크하십시오. 만약 에러로 인해 multishot이 중단되었다면, 에러 원인을 해결한 뒤 다시 한 번 accept 요청을 제출해야 합니다.
     // ionet_context_t *ctx = create_ionet_context(IO_TYPE_ACCEPT, server->accept_fd, -1, server);
     ionet_context_t *ctx = create_ionet_context(IO_TYPE_MULTISHOT_ACCEPT, server->accept_fd, -1, server);
-    add_request(server, ctx);
+    add_request(ctx, 0, 0);
     io_uring_submit(&server->ring);
 
     while (1) {
         struct io_uring_cqe *cqe;
 
         // 완료된 이벤트가 있을 때까지 대기
+        LOG_DEBUG("io_uring_wait_cqe...");
         int rv = io_uring_wait_cqe(&server->ring, &cqe);
         if (rv != 0) {
             if (rv == -EINTR) {
@@ -133,41 +110,64 @@ int ionet_loop(struct ionet_server *server)
             LOG_ERROR_CODE(rv, "io_uring_wait_cqe() failed");
             goto out;
         }
+        LOG_DEBUG("io_uring_wait_cq return: %d", rv);
 
         struct io_uring_cqe *cqes[server->queue_size];
         int cqe_count = io_uring_peek_batch_cqe(&server->ring, cqes, server->queue_size);
+        
+        LOG_DEBUG("cqe_count: %d", cqe_count);
+        for (int i = 0; i < cqe_count; i++) {
+            cqe = cqes[i];
+
+            struct ionet_context *ctx = (struct ionet_context *)io_uring_cqe_get_data(cqe);
+            LOG_DEBUG("cqe[%d]->io_type: %s", i, get_io_type_string(ctx->io_type));
+        }
+
 
         for (int i = 0; i < cqe_count; i++) {
             cqe = cqes[i];
 
             struct ionet_context *ctx = (struct ionet_context *)io_uring_cqe_get_data(cqe);
-            if (cqe->res < 0) {
-                // 시스템 에러 발생 (예: -ENOBUFS, -ECONNRESET 등)
-                LOG_ERROR_CODE(cqe->res, "IO Error");
-                delete_ionet_context(&ctx);
-                continue;
-            }
             if (cqe->res <= 0) {
                 if (cqe->res == 0) {
-                    if (ctx->io_type == IO_TYPE_READ) {
-                        print_ionet_context("CLIENT_EXIT_CONTEXT", ctx);
-                        delete_ionet_context(&ctx);
-                        LOG_DEBUG("client exited");
-                        continue;
+                    switch (ctx->io_type) {
+                        case IO_TYPE_READ:
+                            print_ionet_context("CLIENT_EXIT_CONTEXT", ctx);
+                            LOG_DEBUG("client exited");
+                            close_ionet_context(ctx);
+                            break;
+                        case IO_TYPE_CLOSE:
+                            LOG_DEBUG("close fd: %d", ctx->fd);
+                            LOG_DEBUG("client socket closed");
+                            delete_ionet_context(ctx);
+                            // break;
+                            continue;
+                        case IO_TYPE_FILE_CLOSE:
+                            // file close complete
+                            LOG_DEBUG("file closed");
+                            break;
+                        default:
+                            LOG_DEBUG("not processed: %s", get_io_type_string(ctx->io_type));
+                            break;
                     }
                 } 
+                else {
+                    // TODO: 시스템 에러 발생 처리 (예: -ENOBUFS, -ECONNRESET 등)
+                    LOG_ERROR_CODE(cqe->res, "%s failed", get_io_type_string(ctx->io_type));
+                }
+                continue;
             }
 
             switch (ctx->io_type) {
                 case IO_TYPE_ACCEPT:
                 case IO_TYPE_MULTISHOT_ACCEPT:
                     {
-                        LOG_DEBUG("accept fd: %d", cqe->res);
+                        print_ionet_context("ACCEPT_CONTEXT", ctx);
 
                         if (ctx->io_type == IO_TYPE_ACCEPT) {
-                            add_request(server, ctx);
+                            add_request(ctx, 0, 0);
                         }
-
+                        
                         ionet_context_t *new_read_ctx = create_ionet_context(IO_TYPE_READ, cqe->res, -1, server);
 
                         LOG_DEBUG("max_read_buf_size: %lu", server->max_read_buf_size);
@@ -176,50 +176,57 @@ int ionet_loop(struct ionet_server *server)
                         if (!new_read_ctx->read_buf) {
                             PANIC("malloc() failed");
                         }
+                        new_read_ctx->read_buf_size = server->max_read_buf_size;
 
                         print_ionet_context("NEW_READ_CONTEXT", new_read_ctx);
 
-                        add_request(server, new_read_ctx);
+                        add_request(new_read_ctx, 0, 0);
                         
                         if (server->accept_cb) {
-                            server->accept_cb(cqe->res, ctx);
+                            server->accept_cb(cqe->res, new_read_ctx);
                         }
 
                         break;
                     }
+                case IO_TYPE_SHUTDOWN:
+                    break;
+                case IO_TYPE_CANCEL:
+                    break;
+                case IO_TYPE_CLOSE:
+                    break;
+                case IO_TYPE_FILE_CLOSE:
+                    break;
                 case IO_TYPE_READ:
                     LOG_DEBUG("IO_TYPE_READ(cqe->res: %d ctx->fd: %d)", cqe->res, ctx->fd);
 
                     ctx->read_len = cqe->res;
-
-                    add_request(server, ctx);
                     
                     if (server->read_cb) {
                         server->read_cb(cqe->res, ctx);
                     }
 
+                    add_request(ctx, 0, 0);
+
                     break;
                 case IO_TYPE_WRITE:
                     ctx->send_len += cqe->res;
 
-                    print_ionet_context("WRITE_CONTEXT", ctx);
-
                     if (ctx->send_buf_size == ctx->send_len) {
                         // send complete
                         LOG_DEBUG("send complete: %lu bytes", ctx->send_len);
-                        free_ionet_context(&ctx);
+                        if (server->write_cb) {
+                            server->write_cb(cqe->res, ctx);
+                        }
                     } else {
                         // partially sent
-                        add_request(server, ctx);
+                        add_request(ctx, 0, 0);
                     }
                     
-                    if (server->write_cb) {
-                        server->write_cb(cqe->res, ctx);
-                    }
-
                     break;
                 case IO_TYPE_SENDFILE:
                     break;
+                default:
+                    LOG_DEBUG("unknown io_type: %s", get_io_type_string(ctx->io_type));
             }
         }
         io_uring_cq_advance(&server->ring, cqe_count);
@@ -268,7 +275,7 @@ int ionet_send_data(struct ionet_server *server, int fd, int file_fd, void *data
 
     ctx->send_buf = data;
     ctx->send_buf_size = data_len;
-    add_request(server, ctx);
+    add_request(ctx, 0, 0);
 
     return 0;
 }
@@ -279,3 +286,13 @@ void set_read_buf_size(struct ionet_server *server, size_t size)
         server->max_read_buf_size = size;
     }
 }
+
+void set_max_send_size(struct ionet_server *server, unsigned size)
+{
+    if (server) {
+        server->max_send_size = size;
+    }
+}
+
+
+
